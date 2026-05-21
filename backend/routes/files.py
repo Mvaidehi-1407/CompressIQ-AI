@@ -7,6 +7,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from werkzeug.utils import secure_filename
 from models import db, FileRecord
 from services.duplicate_service import compute_sha256, check_duplicate
+from services.protection_service import unprotect_file
 
 logger = logging.getLogger(__name__)
 files_bp = Blueprint("files", __name__, url_prefix="/api/files")
@@ -175,6 +176,44 @@ def download_file(file_id):
     else:
         path = os.path.join(upload_folder, record.stored_filename)
         download_name = record.original_filename
+
+    if not os.path.exists(path):
+        return jsonify({"error": "File not found on disk"}), 404
+
+    return send_file(path, as_attachment=True, download_name=download_name)
+
+
+@files_bp.route("/<file_id>/restore", methods=["GET"])
+@jwt_required()
+def restore_file(file_id):
+    """Restore a file explicitly. Query param `type` = 'exact'|'near' (default 'exact').
+    - exact: serve original uploaded file when available
+    - near: serve compressed output if available (near-original)
+    """
+    user_id = get_jwt_identity()
+    record = FileRecord.query.filter_by(id=file_id, user_id=user_id).first()
+    if not record:
+        return jsonify({"error": "File not found"}), 404
+
+    rtype = request.args.get('type', 'exact')
+    upload_folder = current_app.config['UPLOAD_FOLDER']
+    compressed_folder = current_app.config['COMPRESSED_FOLDER']
+    protected_folder = current_app.config['PROTECTED_FOLDER']
+
+    # If file is protected, prefer protection restore endpoint
+    if record.is_protected:
+        return jsonify({"error": "File is protected; use protection restore endpoint"}), 400
+
+    if rtype == 'near':
+        if record.is_compressed and record.compressed_filename:
+            path = os.path.join(compressed_folder, record.compressed_filename)
+            download_name = f"near_{record.original_filename}"
+        else:
+            return jsonify({"error": "No compressed version available"}), 404
+    else:
+        # exact restoration
+        path = os.path.join(upload_folder, record.stored_filename)
+        download_name = f"restored_{record.original_filename}"
 
     if not os.path.exists(path):
         return jsonify({"error": "File not found on disk"}), 404

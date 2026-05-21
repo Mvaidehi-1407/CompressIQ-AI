@@ -7,6 +7,7 @@ from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from models import db, FileRecord
 from services.compression_service import compress_file
+from flask import send_file
 
 logger = logging.getLogger(__name__)
 compression_bp = Blueprint("compression", __name__, url_prefix="/api/compress")
@@ -90,14 +91,16 @@ def compress(file_id):
 
     if not result["success"]:
         return jsonify({"error": "Compression failed — original preserved"}), 500
-
-    record.is_compressed = True
+    # If compression produced no savings, mark as already optimized but do not mark as compressed
+    already_opt = result.get("already_optimized", False)
     record.compression_mode = mode
-    record.compressed_filename = compressed_name
     record.compressed_size = result["compressed_size"]
     record.compression_ratio = result["ratio"]
-    record.is_already_optimized = result.get("already_optimized", False)
-    record.compressed_at = datetime.now(timezone.utc)
+    record.is_already_optimized = already_opt
+    if not already_opt:
+        record.is_compressed = True
+        record.compressed_filename = compressed_name
+        record.compressed_at = datetime.now(timezone.utc)
     db.session.commit()
 
     return jsonify({
@@ -108,6 +111,7 @@ def compress(file_id):
             "compressed_size": result["compressed_size"],
             "ratio": result["ratio"],
             "already_optimized": result.get("already_optimized", False),
+            "log": f"/api/compress/log/{compressed_name}.log" if not result.get('already_optimized', False) else None,
         },
     })
 
@@ -141,16 +145,32 @@ def bulk_compress():
 
         result = compress_file(input_path, output_path, record.file_type, mode)
         if result["success"]:
-            record.is_compressed = True
+            already_opt = result.get("already_optimized", False)
             record.compression_mode = mode
-            record.compressed_filename = compressed_name
             record.compressed_size = result["compressed_size"]
             record.compression_ratio = result["ratio"]
-            record.is_already_optimized = result.get("already_optimized", False)
-            record.compressed_at = datetime.now(timezone.utc)
+            record.is_already_optimized = already_opt
+            if not already_opt:
+                record.is_compressed = True
+                record.compressed_filename = compressed_name
+                record.compressed_at = datetime.now(timezone.utc)
             db.session.commit()
             results.append({"file_id": fid, "success": True, "ratio": result["ratio"]})
         else:
             results.append({"file_id": fid, "success": False})
 
     return jsonify({"results": results})
+
+
+@compression_bp.route('/log/<path:filename>', methods=['GET'])
+@jwt_required()
+def get_log(filename):
+    user_id = get_jwt_identity()
+    compressed_folder = current_app.config['COMPRESSED_FOLDER']
+    # Ensure path remains inside compressed folder
+    path = os.path.normpath(os.path.join(compressed_folder, filename))
+    if not path.startswith(os.path.normpath(compressed_folder)):
+        return jsonify({"error": "Invalid filename"}), 400
+    if not os.path.exists(path):
+        return jsonify({"error": "Log not found"}), 404
+    return send_file(path, as_attachment=False)

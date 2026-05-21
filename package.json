@@ -1,0 +1,13 @@
+{
+  "name": "compressiq",
+  "private": true,
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "cmd /c start \"CompressIQ AI\" start.bat",
+    "build": "cd frontend && npm run build",
+    "preview": "cd frontend && npm run preview",
+    "install:frontend": "npm install --prefix frontend"
+  }
+}

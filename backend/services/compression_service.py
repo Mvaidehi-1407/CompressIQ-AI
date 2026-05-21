@@ -1,9 +1,11 @@
 import os
 import io
+import json
 import zlib
 import zipfile
 import shutil
 import logging
+import subprocess
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -32,6 +34,15 @@ try:
     FFMPEG_AVAILABLE = True
 except ImportError:
     FFMPEG_AVAILABLE = False
+
+# Check for ffmpeg binary in PATH
+try:
+    from shutil import which
+    FFMPEG_BINARY = which("ffmpeg")
+    FFMPEG_BINARY_AVAILABLE = FFMPEG_BINARY is not None
+except Exception:
+    FFMPEG_BINARY = None
+    FFMPEG_BINARY_AVAILABLE = False
 
 
 def verify_integrity(output_path: str, file_type: str) -> bool:
@@ -189,45 +200,167 @@ def compress_txt(input_path: str, output_path: str, mode: str = "lossless") -> b
         return False
 
 
-def compress_zip(input_path: str, output_path: str, mode: str = "lossless") -> bool:
-    """Recompress ZIP archive."""
+def _probe_video(input_path: str) -> dict:
+    """Probe a video file and return normalized metadata."""
     try:
-        level = 9 if mode == "smart_shrink" else 6
-        with zipfile.ZipFile(input_path, "r") as zin:
-            with zipfile.ZipFile(output_path, "w", compression=zipfile.ZIP_DEFLATED,
-                                 compresslevel=level) as zout:
-                for item in zin.infolist():
-                    data = zin.read(item.filename)
-                    zout.writestr(item, data)
-        return True
+        if hasattr(ffmpeg, 'probe'):
+            probe = ffmpeg.probe(input_path)
+        else:
+            p = subprocess.run(
+                [FFMPEG_BINARY.replace('ffmpeg', 'ffprobe'), '-v', 'error', '-show_format', '-show_streams', '-print_format', 'json', input_path],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            probe = json.loads(p.stdout) if p.returncode == 0 else None
     except Exception as e:
-        logger.error(f"ZIP compress failed: {e}")
-        return False
+        logger.debug(f"Video probe failed: {e}")
+        probe = None
+
+    metadata = {
+        'duration': 0.0,
+        'video_codec': None,
+        'audio_codec': None,
+        'video_bitrate': 0,
+        'audio_bitrate': 0,
+        'width': 0,
+        'height': 0,
+        'format_bitrate': 0,
+        'has_audio': False,
+    }
+
+    if not probe:
+        return metadata
+
+    try:
+        fmt = probe.get('format', {})
+        metadata['format_bitrate'] = int(fmt.get('bit_rate', 0) or 0)
+        metadata['duration'] = float(fmt.get('duration', 0.0) or 0.0)
+    except Exception:
+        pass
+
+    for stream in probe.get('streams', []):
+        if stream.get('codec_type') == 'video' and not metadata['video_codec']:
+            metadata['video_codec'] = stream.get('codec_name')
+            metadata['width'] = int(stream.get('width', 0) or 0)
+            metadata['height'] = int(stream.get('height', 0) or 0)
+            metadata['video_bitrate'] = int(stream.get('bit_rate', 0) or 0)
+            if metadata['video_bitrate'] == 0:
+                metadata['video_bitrate'] = metadata['format_bitrate']
+        elif stream.get('codec_type') == 'audio' and not metadata['audio_codec']:
+            metadata['audio_codec'] = stream.get('codec_name')
+            metadata['audio_bitrate'] = int(stream.get('bit_rate', 0) or 0)
+            metadata['has_audio'] = True
+
+    return metadata
+
+
+def _choose_video_settings(metadata: dict) -> dict:
+    """Choose adaptive CRF and audio handling settings based on video metadata."""
+    width = metadata.get('width', 0)
+    height = metadata.get('height', 0)
+    video_bitrate = metadata.get('video_bitrate', 0)
+    audio_bitrate = metadata.get('audio_bitrate', 0)
+    codec = (metadata.get('video_codec') or '').lower()
+
+    if height <= 720:
+        crf = 26
+    elif height <= 1080:
+        crf = 28
+    elif height <= 1440:
+        crf = 30
+    else:
+        crf = 32
+
+    if video_bitrate and video_bitrate > 10_000_000:
+        crf = min(crf + 1, 34)
+    elif video_bitrate and video_bitrate < 2_000_000:
+        crf = max(crf - 2, 22)
+
+    if codec in ('h264', 'hevc', 'hevc_nvenc') and video_bitrate and video_bitrate <= 2_000_000 and height <= 720:
+        # Already very efficiently encoded small video
+        return {
+            'skip_compression': True,
+            'crf': crf,
+            'preset': 'slower',
+            'acodec': 'copy',
+            'audio_bitrate': None,
+        }
+
+    audio_copy = False
+    if audio_bitrate and audio_bitrate <= 128000:
+        audio_copy = True
+    elif audio_bitrate == 0:
+        audio_copy = True
+
+    return {
+        'skip_compression': False,
+        'crf': crf,
+        'preset': 'slow',
+        'acodec': 'copy' if audio_copy else 'aac',
+        'audio_bitrate': None if audio_copy else '128k',
+    }
 
 
 def compress_video_smart(input_path: str, output_path: str) -> bool:
     """Compress video using FFmpeg if available."""
-    if not FFMPEG_AVAILABLE:
-        logger.warning("FFmpeg not available, skipping video compression")
+    if not (FFMPEG_AVAILABLE and FFMPEG_BINARY_AVAILABLE):
+        logger.warning("FFmpeg python lib or ffmpeg binary not available, skipping video compression")
         return False
+
+    metadata = _probe_video(input_path)
+    settings = _choose_video_settings(metadata)
+
+    if settings['skip_compression']:
+        logger.info(f"Video already optimized, skipping compression: {input_path}")
+        shutil.copy2(input_path, output_path)
+        return True
+
+    vcodec = 'libx264'
+    crf = settings['crf']
+    preset = settings['preset']
+    acodec = settings['acodec']
+    audio_bitrate = settings['audio_bitrate']
+
+    ffmpeg_kwargs = {
+        'vcodec': vcodec,
+        'crf': crf,
+        'preset': preset,
+        'movflags': 'faststart',
+    }
+    if acodec == 'copy':
+        ffmpeg_kwargs['acodec'] = 'copy'
+    else:
+        ffmpeg_kwargs['acodec'] = acodec
+        ffmpeg_kwargs['audio_bitrate'] = audio_bitrate
+
     try:
-        (
-            ffmpeg
-            .input(input_path)
-            .output(
-                output_path,
-                vcodec="libx264",
-                crf=28,
-                preset="fast",
-                acodec="aac",
-                audio_bitrate="128k",
-            )
-            .overwrite_output()
-            .run(quiet=True)
-        )
+        stream = ffmpeg.input(input_path)
+        stream = ffmpeg.output(stream, output_path, **ffmpeg_kwargs)
+        stream = ffmpeg.overwrite_output(stream)
+        out = stream.run(capture_stdout=True, capture_stderr=True)
+        try:
+            log_data = {
+                'cmd': 'ffmpeg-python',
+                'metadata': metadata,
+                'settings': settings,
+                'ffmpeg_kwargs': ffmpeg_kwargs,
+                'stdout': out[0].decode('utf-8', errors='ignore') if out and out[0] else '',
+                'stderr': out[1].decode('utf-8', errors='ignore') if out and out[1] else '',
+            }
+            with open(output_path + '.log', 'w', encoding='utf-8') as lf:
+                json.dump(log_data, lf, indent=2)
+        except Exception:
+            pass
         return True
     except Exception as e:
         logger.error(f"Video compression failed: {e}")
+        try:
+            if hasattr(e, 'stderr') and e.stderr:
+                with open(output_path + '.log', 'w', encoding='utf-8') as lf:
+                    lf.write(e.stderr.decode('utf-8', errors='ignore'))
+        except Exception:
+            pass
         return False
 
 

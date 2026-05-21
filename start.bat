@@ -13,6 +13,9 @@ start "CompressIQ Frontend" cmd /k "cd frontend && npm run dev"
 
 echo.
 echo Both servers are starting...
-echo Open: http://localhost:5173
+echo Launching browser at http://localhost:5173
+start "" "http://localhost:5173"
+echo.
+echo If the browser does not open automatically, visit http://localhost:5173
 echo.
 pause
