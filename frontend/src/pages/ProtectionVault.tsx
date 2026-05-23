@@ -22,12 +22,11 @@ export default function ProtectionVault() {
   const [acting, setActing] = useState<Set<string>>(new Set())
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [restoreStatus, setRestoreStatus] = useState<Record<string, string>>({})
-  const [filter, setFilter] = useState<'all'|'protected'|'unprotected'>('protected')
 
   useEffect(() => { fetchFiles() }, [])
 
-  const eligible = files.filter(f => !f.is_duplicate && (filter==='all' ? true : filter==='protected' ? f.is_protected : !f.is_protected))
   const protectedFiles = files.filter(f => !f.is_duplicate && f.is_protected)
+  const eligible = protectedFiles
   const compressedFiles = files.filter(f => !f.is_duplicate && f.is_compressed)
   const selectedIds = Array.from(selected)
 
@@ -79,7 +78,6 @@ export default function ProtectionVault() {
   }
 
   const protectedCount = files.filter(f => f.is_protected).length
-  const unprotectedCount = files.filter(f => !f.is_duplicate && !f.is_protected).length
 
   return (
     <div className="space-y-8">
@@ -105,28 +103,22 @@ export default function ProtectionVault() {
               <div className="text-2xl font-black text-emerald-400">{protectedCount}</div>
               <div className="text-xs text-slate-500 uppercase tracking-wider">Restorable</div>
             </div>
-            <div>
-              <div className="text-2xl font-black text-slate-400">{unprotectedCount}</div>
-              <div className="text-xs text-slate-500 uppercase tracking-wider">Pending</div>
-            </div>
           </div>
         </div>
       </motion.div>
 
-      <div className="flex gap-2">
-        {(['all','protected','unprotected'] as const).map(f => (
-          <button key={f} onClick={()=>setFilter(f)} className={`px-4 py-2 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all ${filter===f?'btn-primary':'btn-secondary'}`}>
-            {f === 'protected' ? 'Restorable' : f === 'unprotected' ? 'Pending' : 'All'}
-          </button>
-        ))}
-      </div>
-
       <div className="card p-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="section-header mb-1">Restore Original Files</h2>
-          <p className="text-xs text-slate-500">Files are already protected automatically. Download reconstructed originals or compressed versions separately.</p>
+          <p className="text-xs text-slate-500">Select the restorable files you want and download reconstructed originals.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <button onClick={() => setSelected(new Set(protectedFiles.map(f => f.id)))} disabled={protectedFiles.length === 0} className="btn-secondary text-xs py-2 px-3">
+            Select All Restorable
+          </button>
+          <button onClick={() => setSelected(new Set())} disabled={selectedIds.length === 0} className="btn-secondary text-xs py-2 px-3">
+            Clear Selection
+          </button>
           <button onClick={() => restoredBulk(selectedIds, true)} disabled={selectedIds.length === 0 || acting.has('protected-bulk')} className="btn-cyan text-xs py-2 px-3">
             <Download size={13}/> Download Selected Restored Files
           </button>
@@ -144,7 +136,7 @@ export default function ProtectionVault() {
           {eligible.length === 0 && (
             <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} className="card flex flex-col items-center py-16 text-center">
               <ShieldCheck size={40} className="text-slate-700 mb-3"/>
-              <p className="text-slate-500 font-medium">No files to display</p>
+              <p className="text-slate-500 font-medium">No restorable files to display</p>
             </motion.div>
           )}
           {eligible.map((f, i) => {

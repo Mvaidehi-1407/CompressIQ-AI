@@ -61,7 +61,11 @@ export default function UploadCenter() {
     addFiles(e.dataTransfer.files)
   }, [])
 
+  const uploadingNow = items.some(i => i.status === 'uploading')
+  const hasPending = items.some(i => i.status === 'pending')
+
   const uploadAll = async () => {
+    if (uploadingNow) return
     const pending = items.filter(i => i.status === 'pending')
     for (const item of pending) {
       setItems(prev => prev.map(i => i.file === item.file ? { ...i, status: 'uploading', progress: 30 } : i))
@@ -130,7 +134,7 @@ export default function UploadCenter() {
           onDrop={onDrop}
           onClick={() => fileInputRef.current?.click()}
         >
-          <input ref={fileInputRef} type="file" multiple accept={ACCEPTED} className="hidden" onChange={e => addFiles(e.target.files)} />
+          <input ref={fileInputRef} type="file" multiple accept={ACCEPTED} className="hidden" onChange={e => { addFiles(e.target.files); e.currentTarget.value = '' }} />
           <motion.div animate={dragging ? { scale:1.1 } : { scale:1 }} transition={{ type:'spring', stiffness:300 }}>
             <div className="w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-5" style={{ background:'linear-gradient(135deg,rgba(37,99,235,0.2),rgba(124,58,237,0.2))', border:'1px solid rgba(37,99,235,0.3)' }}>
               <Upload size={36} className="text-blue-400" />
@@ -155,8 +159,8 @@ export default function UploadCenter() {
               <h2 className="section-header">Upload Queue ({items.length})</h2>
               <div className="flex gap-2">
                 <button onClick={clearDone} className="btn-secondary text-xs py-1.5 px-3">Clear Done</button>
-                <button onClick={uploadAll} disabled={!items.some(i=>i.status==='pending')} className="btn-primary text-xs py-1.5 px-4">
-                  <Upload size={13}/> Upload All
+                <button onClick={uploadAll} disabled={!hasPending || uploadingNow} className="btn-primary text-xs py-1.5 px-4">
+                  <Upload size={13}/> {uploadingNow ? 'Uploading...' : 'Upload All'}
                 </button>
               </div>
             </div>
