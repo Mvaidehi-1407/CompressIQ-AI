@@ -43,7 +43,7 @@ export default function Dashboard() {
     { label: 'Total Files', value: stats.total_files, suffix: '', icon: FileText, color: 'from-blue-500 to-cyan-500', glow: 'rgba(37,99,235,0.3)' },
     { label: 'Space Saved', value: stats.total_saved_bytes, fmt: true, icon: TrendingDown, color: 'from-emerald-500 to-teal-500', glow: 'rgba(16,185,129,0.3)' },
     { label: 'Duplicates Found', value: stats.duplicate_files, suffix: '', icon: Copy, color: 'from-orange-500 to-amber-500', glow: 'rgba(249,115,22,0.3)' },
-    { label: 'Protected Files', value: stats.protected_files, suffix: '', icon: ShieldCheck, color: 'from-violet-500 to-purple-600', glow: 'rgba(139,92,246,0.3)' },
+    { label: 'Restorable Files', value: stats.protected_files, suffix: '', icon: ShieldCheck, color: 'from-violet-500 to-purple-600', glow: 'rgba(139,92,246,0.3)' },
   ] : []
 
   const typeIcon: Record<string, any> = { image: Image, video: Video, document: FileText, archive: Archive }
@@ -51,7 +51,7 @@ export default function Dashboard() {
   const quickActions = [
     { to: '/upload', icon: Upload, label: 'Upload Files', desc: 'Add new files to your vault', color: 'from-blue-500 to-cyan-500' },
     { to: '/compress', icon: Zap, label: 'Compress Files', desc: 'Optimize with AI recommendations', color: 'from-violet-500 to-purple-600' },
-    { to: '/protect', icon: ShieldCheck, label: 'Protect Files', desc: 'AES-256 encryption vault', color: 'from-emerald-500 to-teal-500' },
+    { to: '/restore', icon: ShieldCheck, label: 'Restore Files', desc: 'Recover protected originals', color: 'from-emerald-500 to-teal-500' },
     { to: '/analytics', icon: TrendingDown, label: 'View Analytics', desc: 'Storage savings insights', color: 'from-orange-500 to-amber-500' },
   ]
 
@@ -60,9 +60,9 @@ export default function Dashboard() {
       {/* Header */}
       <motion.div initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }}>
         <h1 className="text-3xl font-black text-slate-100">
-          Welcome back, <span className="gradient-text">{user?.username}</span> 👋
+          Welcome back, <span className="gradient-text">{user?.username}</span> ðŸ‘‹
         </h1>
-        <p className="text-slate-400 mt-1">Your storage intelligence dashboard — all systems operational.</p>
+        <p className="text-slate-400 mt-1">Your storage intelligence dashboard â€” all systems operational.</p>
       </motion.div>
 
       {/* Stat Cards */}

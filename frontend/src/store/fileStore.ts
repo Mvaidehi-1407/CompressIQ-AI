@@ -35,7 +35,28 @@ interface FileState {
   protectFile: (id: string) => Promise<FileRecord>
   unprotectFile: (id: string) => Promise<FileRecord>
   downloadFile: (id: string, version?: string, filename?: string) => Promise<void>
+  downloadCompressed: (id: string, filename: string) => Promise<void>
+  downloadRestored: (id: string, filename: string, protectedFile?: boolean) => Promise<void>
+  downloadCompressedBulk: (ids?: string[]) => Promise<void>
+  downloadRestoredBulk: (ids?: string[], protectedFiles?: boolean) => Promise<void>
   restoreProtected: (id: string, filename: string) => Promise<void>
+}
+
+function filenameFromDisposition(disposition?: string) {
+  if (!disposition) return null
+  const utf8 = disposition.match(/filename\*=UTF-8''([^;]+)/i)
+  if (utf8?.[1]) return decodeURIComponent(utf8[1])
+  const plain = disposition.match(/filename="?([^"]+)"?/i)
+  return plain?.[1] ?? null
+}
+
+function saveBlob(data: Blob, filename: string) {
+  const url = URL.createObjectURL(data)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 export const useFileStore = create<FileState>((set, get) => ({
@@ -107,21 +128,33 @@ export const useFileStore = create<FileState>((set, get) => ({
       params: { version },
       responseType: 'blob',
     })
-    const url = URL.createObjectURL(res.data)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filename
-    a.click()
-    URL.revokeObjectURL(url)
+    saveBlob(res.data, filenameFromDisposition(res.headers['content-disposition']) ?? filename)
+  },
+
+  downloadCompressed: async (id: string, filename: string) => {
+    const res = await api.get(`/api/files/${id}/download/compressed`, { responseType: 'blob' })
+    saveBlob(res.data, filenameFromDisposition(res.headers['content-disposition']) ?? filename)
+  },
+
+  downloadRestored: async (id: string, filename: string, protectedFile = false) => {
+    const endpoint = protectedFile ? `/api/protect/${id}/restore` : `/api/files/${id}/download/restored`
+    const res = await api.get(endpoint, { responseType: 'blob' })
+    saveBlob(res.data, filenameFromDisposition(res.headers['content-disposition']) ?? `restored_${filename}`)
+  },
+
+  downloadCompressedBulk: async (ids = []) => {
+    const res = await api.post('/api/files/download/compressed/bulk', { file_ids: ids }, { responseType: 'blob' })
+    saveBlob(res.data, filenameFromDisposition(res.headers['content-disposition']) ?? 'compressed_files.zip')
+  },
+
+  downloadRestoredBulk: async (ids = [], protectedFiles = false) => {
+    const endpoint = protectedFiles ? '/api/protect/restore/bulk' : '/api/files/download/restored/bulk'
+    const res = await api.post(endpoint, { file_ids: ids }, { responseType: 'blob' })
+    saveBlob(res.data, filenameFromDisposition(res.headers['content-disposition']) ?? 'restored_files.zip')
   },
 
   restoreProtected: async (id: string, filename: string) => {
     const res = await api.get(`/api/protect/${id}/restore`, { responseType: 'blob' })
-    const url = URL.createObjectURL(res.data)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `restored_${filename}`
-    a.click()
-    URL.revokeObjectURL(url)
+    saveBlob(res.data, filenameFromDisposition(res.headers['content-disposition']) ?? `restored_${filename}`)
   },
 }))

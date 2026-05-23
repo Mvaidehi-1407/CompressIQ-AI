@@ -1,6 +1,8 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
+import { useState } from 'react'
 import { useAuthStore } from '../store/authStore'
+import ProfileModal from './ProfileModal'
 import {
   LayoutDashboard, Upload, Zap, ShieldCheck,
   BarChart3, LogOut, ChevronRight
@@ -10,13 +12,14 @@ const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/upload',    icon: Upload,          label: 'Upload Center' },
   { to: '/compress',  icon: Zap,             label: 'Compression' },
-  { to: '/protect',   icon: ShieldCheck,     label: 'Protection Vault' },
+  { to: '/restore',   icon: ShieldCheck,     label: 'Restoration Vault' },
   { to: '/analytics', icon: BarChart3,       label: 'Analytics' },
 ]
 
 export default function Sidebar() {
   const { user, logout } = useAuthStore()
   const navigate = useNavigate()
+  const [profileOpen, setProfileOpen] = useState(false)
 
   const handleLogout = () => {
     logout()
@@ -67,7 +70,7 @@ export default function Sidebar() {
 
       {/* User */}
       <div className="p-4 border-t border-white/5">
-        <div className="glass rounded-xl p-3 mb-3">
+        <button onClick={() => setProfileOpen(true)} className="glass rounded-xl p-3 mb-3 w-full text-left transition-all hover:border-blue-500/30 hover:bg-white/[0.06]" title="Open profile">
           <div className="flex items-center gap-3">
             <div
               className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold text-white flex-shrink-0"
@@ -80,7 +83,7 @@ export default function Sidebar() {
               <p className="text-[10px] text-slate-500 truncate">{user?.email}</p>
             </div>
           </div>
-        </div>
+        </button>
         <button
           onClick={handleLogout}
           className="w-full sidebar-link text-red-400/70 hover:text-red-400 hover:bg-red-500/10"
@@ -89,6 +92,7 @@ export default function Sidebar() {
           <span>Sign Out</span>
         </button>
       </div>
+      <ProfileModal open={profileOpen} onClose={() => setProfileOpen(false)} />
     </aside>
   )
 }

@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useFileStore, FileRecord } from '../store/fileStore'
+import DuplicateCleanupModal, { DuplicateGroup } from '../components/DuplicateCleanupModal'
 import { Upload, X, CheckCircle, AlertTriangle, Copy, FileText, Image, Video, Archive, Trash2, Download } from 'lucide-react'
 
 const ACCEPTED = '.jpg,.jpeg,.png,.webp,.mp4,.mov,.avi,.pdf,.docx,.txt,.zip'
@@ -15,6 +16,22 @@ function fmt(bytes: number) {
 const typeIcon: Record<string,any> = { image: Image, video: Video, document: FileText, archive: Archive }
 const typeColor: Record<string,string> = { image:'text-cyan-400', video:'text-violet-400', document:'text-blue-400', archive:'text-orange-400' }
 
+function buildDuplicateGroups(records: FileRecord[]) {
+  const byId = new Map(records.map(file => [file.id, file]))
+  const groups = new Map<string, DuplicateGroup>()
+
+  records.filter(file => file.is_duplicate).forEach(file => {
+    const original = (file.duplicate_of && byId.get(file.duplicate_of))
+      || records.find(candidate => !candidate.is_duplicate && candidate.sha256_hash === file.sha256_hash)
+    if (!original) return
+    const existing = groups.get(original.id) ?? { original, duplicates: [] }
+    existing.duplicates.push(file)
+    groups.set(original.id, existing)
+  })
+
+  return Array.from(groups.values()).filter(group => group.duplicates.length > 0)
+}
+
 interface UploadItem {
   file: File
   status: 'pending' | 'uploading' | 'done' | 'error'
@@ -26,8 +43,12 @@ interface UploadItem {
 export default function UploadCenter() {
   const [items, setItems]     = useState<UploadItem[]>([])
   const [dragging, setDragging] = useState(false)
+  const [duplicateGroups, setDuplicateGroups] = useState<DuplicateGroup[]>([])
+  const [duplicateModalOpen, setDuplicateModalOpen] = useState(false)
+  const [deletingDuplicates, setDeletingDuplicates] = useState(false)
+  const [cleanupSuccess, setCleanupSuccess] = useState<{ preserved: number; deleted: number; recovered: number } | null>(null)
   const fileInputRef            = useRef<HTMLInputElement>(null)
-  const { uploadFile, deleteFile, downloadFile, files, fetchFiles } = useFileStore()
+  const { uploadFile, deleteFile, downloadFile, fetchFiles } = useFileStore()
 
   const addFiles = (fileList: FileList | null) => {
     if (!fileList) return
@@ -47,7 +68,15 @@ export default function UploadCenter() {
       try {
         const result = await uploadFile(item.file)
         setItems(prev => prev.map(i => i.file === item.file ? { ...i, status: 'done', result, progress: 100 } : i))
-        fetchFiles()
+        await fetchFiles()
+        if (result.is_duplicate) {
+          const groups = buildDuplicateGroups(useFileStore.getState().files)
+          if (groups.length > 0) {
+            setDuplicateGroups(groups)
+            setCleanupSuccess(null)
+            setDuplicateModalOpen(true)
+          }
+        }
       } catch (e: any) {
         const error = e?.response?.data?.error ?? 'Upload failed'
         setItems(prev => prev.map(i => i.file === item.file ? { ...i, status: 'error', error, progress: 0 } : i))
@@ -59,6 +88,31 @@ export default function UploadCenter() {
   const clearDone  = () => setItems(prev => prev.filter(i => i.status !== 'done'))
 
   const allFiles = useFileStore(s => s.files)
+
+  const keepAllDuplicates = () => {
+    setDuplicateModalOpen(false)
+    setDuplicateGroups([])
+    setCleanupSuccess(null)
+  }
+
+  const deleteAllDuplicates = async () => {
+    const duplicateIds = duplicateGroups.flatMap(group => group.duplicates.map(file => file.id))
+    const recovered = duplicateGroups.reduce((sum, group) => sum + group.duplicates.reduce((inner, file) => inner + file.original_size, 0), 0)
+    setDeletingDuplicates(true)
+    try {
+      for (const id of duplicateIds) {
+        await deleteFile(id)
+      }
+      await fetchFiles()
+      setCleanupSuccess({
+        preserved: duplicateGroups.length,
+        deleted: duplicateIds.length,
+        recovered,
+      })
+    } finally {
+      setDeletingDuplicates(false)
+    }
+  }
 
   return (
     <div className="space-y-8">
@@ -218,6 +272,15 @@ export default function UploadCenter() {
           )}
         </div>
       </div>
+      <DuplicateCleanupModal
+        open={duplicateModalOpen}
+        groups={duplicateGroups}
+        deleting={deletingDuplicates}
+        success={cleanupSuccess}
+        onKeepAll={keepAllDuplicates}
+        onDeleteAll={deleteAllDuplicates}
+        onCloseSuccess={keepAllDuplicates}
+      />
     </div>
   )
 }

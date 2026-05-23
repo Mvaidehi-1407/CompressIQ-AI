@@ -16,9 +16,10 @@ const MODES = [
 ]
 
 export default function CompressionCenter() {
-  const { files, fetchFiles, compressFile, downloadFile } = useFileStore()
+  const { files, fetchFiles, compressFile, downloadCompressed, downloadCompressedBulk } = useFileStore()
   const [selectedMode, setSelectedMode] = useState<'lossless'|'smart_shrink'>('smart_shrink')
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [selectedCompressed, setSelectedCompressed] = useState<Set<string>>(new Set())
   const [compressing, setCompressing] = useState<Set<string>>(new Set())
   const [results, setResults] = useState<Record<string,any>>({})
   const [recommendations, setRecommendations] = useState<Record<string,any>>({})
@@ -27,6 +28,8 @@ export default function CompressionCenter() {
   useEffect(() => { fetchFiles() }, [])
 
   const eligible = files.filter(f => !f.is_duplicate && (filter==='all' ? true : filter==='ready' ? !f.is_compressed : f.is_compressed))
+  const visibleReady = eligible.filter(f => !f.is_compressed)
+  const visibleCompressed = eligible.filter(f => f.is_compressed)
 
   const fetchRec = async (fileId: string) => {
     if (recommendations[fileId]) return
@@ -36,11 +39,23 @@ export default function CompressionCenter() {
     } catch {}
   }
 
-  const toggle = (id: string) => {
+  const toggleReady = (id: string) => {
     const s = new Set(selected)
-    s.has(id) ? s.delete(id) : s.add(id)
+    if (s.has(id)) {
+      s.delete(id)
+    } else {
+      s.add(id)
+      fetchRec(id)
+    }
     setSelected(s)
-    if (!s.has(id) === false) fetchRec(id)
+  }
+
+  const toggleCompressed = (id: string) => {
+    setSelectedCompressed(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
   }
 
   const compressSelected = async () => {
@@ -96,11 +111,21 @@ export default function CompressionCenter() {
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-3">
-          {selected.size>0 && (
-            <span className="text-xs text-slate-400">{selected.size} selected</span>
+        <div className="flex flex-wrap items-center gap-3">
+          {(selected.size>0 || selectedCompressed.size>0) && (
+            <span className="text-xs text-slate-400">
+              {selected.size} ready selected
+              {selectedCompressed.size > 0 && `, ${selectedCompressed.size} compressed selected`}
+            </span>
           )}
-          <button onClick={()=>setSelected(new Set(eligible.filter(f=>!f.is_compressed).map(f=>f.id)))} className="btn-secondary text-xs py-2 px-3">Select All Ready</button>
+          <button onClick={()=>setSelected(new Set(visibleReady.map(f=>f.id)))} disabled={visibleReady.length === 0} className="btn-secondary text-xs py-2 px-3">Select All Ready</button>
+          <button onClick={()=>setSelectedCompressed(new Set(visibleCompressed.map(f=>f.id)))} disabled={visibleCompressed.length === 0} className="btn-secondary text-xs py-2 px-3">Select All Compressed</button>
+          <button onClick={()=>downloadCompressedBulk(Array.from(selectedCompressed))} disabled={selectedCompressed.size === 0} className="btn-secondary text-xs py-2 px-3">
+            <Download size={13}/> Download Selected
+          </button>
+          <button onClick={()=>downloadCompressedBulk(visibleCompressed.map(f=>f.id))} disabled={visibleCompressed.length === 0} className="btn-secondary text-xs py-2 px-3">
+            <Download size={13}/> Download All Compressed
+          </button>
           <button onClick={compressSelected} disabled={selected.size===0||compressing.size>0} className="btn-primary text-xs py-2 px-4">
             <Zap size={13}/> Compress ({selected.size})
           </button>
@@ -122,11 +147,11 @@ export default function CompressionCenter() {
             const isComp = compressing.has(f.id)
             const result = results[f.id]
             const rec = recommendations[f.id]
-            const isSelected = selected.has(f.id)
+            const isSelected = f.is_compressed ? selectedCompressed.has(f.id) : selected.has(f.id)
             return (
               <motion.div key={f.id} initial={{ opacity:0, x:-16 }} animate={{ opacity:1, x:0 }} transition={{ delay:i*0.04 }}
-                className={`card py-4 px-5 cursor-pointer transition-all duration-200 ${isSelected?'border-blue-500/40 bg-blue-500/5':''} ${f.is_compressed?'opacity-70':''}`}
-                onClick={()=>!f.is_compressed && toggle(f.id)}
+                className={`card py-4 px-5 cursor-pointer transition-all duration-200 ${isSelected?'border-blue-500/40 bg-blue-500/5':''} ${f.is_compressed?'opacity-90':''}`}
+                onClick={()=>f.is_compressed ? toggleCompressed(f.id) : toggleReady(f.id)}
               >
                 <div className="flex items-center gap-4">
                   <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all ${isSelected?'bg-blue-500 border-blue-500':'border-slate-600'}`}>
@@ -160,7 +185,7 @@ export default function CompressionCenter() {
                     )}
                   </div>
                   {f.is_compressed && (
-                    <button onClick={e=>{e.stopPropagation();downloadFile(f.id,'compressed','compressed_'+f.original_filename)}} className="p-2 rounded-xl glass hover:bg-white/10 transition-colors text-slate-400 hover:text-blue-400">
+                    <button onClick={e=>{e.stopPropagation();downloadCompressed(f.id,'compressed_'+f.original_filename)}} className="p-2 rounded-xl glass hover:bg-white/10 transition-colors text-slate-400 hover:text-blue-400" title="Download compressed file">
                       <Download size={15}/>
                     </button>
                   )}
