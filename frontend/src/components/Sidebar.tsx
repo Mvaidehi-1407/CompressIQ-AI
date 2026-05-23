@@ -1,8 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { useState } from 'react'
 import { useAuthStore } from '../store/authStore'
-import ProfileModal from './ProfileModal'
 import {
   LayoutDashboard, Upload, Zap, ShieldCheck,
   BarChart3, LogOut, ChevronRight
@@ -19,7 +17,6 @@ const navItems = [
 export default function Sidebar() {
   const { user, logout } = useAuthStore()
   const navigate = useNavigate()
-  const [profileOpen, setProfileOpen] = useState(false)
 
   const handleLogout = () => {
     logout()
@@ -70,7 +67,7 @@ export default function Sidebar() {
 
       {/* User */}
       <div className="p-4 border-t border-white/5">
-        <button onClick={() => setProfileOpen(true)} className="glass rounded-xl p-3 mb-3 w-full text-left transition-all hover:border-blue-500/30 hover:bg-white/[0.06]" title="Open profile">
+        <button onClick={() => navigate('/profile')} className="glass rounded-xl p-3 mb-3 w-full text-left transition-all hover:border-blue-500/30 hover:bg-white/[0.06]" title="Open profile">
           <div className="flex items-center gap-3">
             <div
               className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold text-white flex-shrink-0"
@@ -92,7 +89,6 @@ export default function Sidebar() {
           <span>Sign Out</span>
         </button>
       </div>
-      <ProfileModal open={profileOpen} onClose={() => setProfileOpen(false)} />
     </aside>
   )
 }

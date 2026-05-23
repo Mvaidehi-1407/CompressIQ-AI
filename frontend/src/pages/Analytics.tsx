@@ -3,7 +3,7 @@ import { motion } from 'framer-motion'
 import api from '../lib/api'
 import { useFileStore } from '../store/fileStore'
 import {
-  AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
+  LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts'
 import { TrendingDown, Files, ShieldCheck, Copy, Zap } from 'lucide-react'
@@ -95,25 +95,24 @@ export default function Analytics() {
         <motion.div initial={{ opacity:0, y:20 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.3 }} className="card">
           <h2 className="text-base font-bold text-slate-200 mb-6">Upload & Savings Timeline</h2>
           <ResponsiveContainer width="100%" height={240}>
-            <AreaChart data={timeline} margin={{ top:5, right:10, left:0, bottom:0 }}>
+            <LineChart data={timeline} margin={{ top:5, right:10, left:0, bottom:0 }}>
               <defs>
-                <linearGradient id="gSize" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#2563eb" stopOpacity={0.3}/>
-                  <stop offset="95%" stopColor="#2563eb" stopOpacity={0}/>
-                </linearGradient>
-                <linearGradient id="gSavings" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                  <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                </linearGradient>
+                <filter id="xrayGlow" x="-20%" y="-20%" width="140%" height="140%">
+                  <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+                  <feMerge>
+                    <feMergeNode in="coloredBlur"/>
+                    <feMergeNode in="SourceGraphic"/>
+                  </feMerge>
+                </filter>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)"/>
+              <CartesianGrid strokeDasharray="8 8" stroke="rgba(34,211,238,0.16)" vertical={true}/>
               <XAxis dataKey="date" tick={{ fill:'#64748b', fontSize:11 }} axisLine={false} tickLine={false}/>
               <YAxis tickFormatter={fmt} tick={{ fill:'#64748b', fontSize:11 }} axisLine={false} tickLine={false} width={60}/>
               <Tooltip content={<CustomTooltip/>}/>
               <Legend wrapperStyle={{ fontSize:'12px', color:'#94a3b8' }}/>
-              <Area type="monotone" dataKey="size" name="Uploaded" stroke="#2563eb" fill="url(#gSize)" strokeWidth={2}/>
-              <Area type="monotone" dataKey="savings" name="Saved" stroke="#10b981" fill="url(#gSavings)" strokeWidth={2}/>
-            </AreaChart>
+              <Line type="monotone" dataKey="size" name="Uploaded" stroke="#22d3ee" strokeWidth={3} dot={false} activeDot={{ r:5, stroke:'#ecfeff', strokeWidth:2 }} filter="url(#xrayGlow)"/>
+              <Line type="monotone" dataKey="savings" name="Saved" stroke="#10b981" strokeWidth={3} dot={false} activeDot={{ r:5, stroke:'#ecfdf5', strokeWidth:2 }} strokeDasharray="10 5" filter="url(#xrayGlow)"/>
+            </LineChart>
           </ResponsiveContainer>
         </motion.div>
       )}

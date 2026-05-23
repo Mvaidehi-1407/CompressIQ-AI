@@ -10,6 +10,7 @@ import UploadCenter from './pages/UploadCenter'
 import CompressionCenter from './pages/CompressionCenter'
 import ProtectionVault from './pages/ProtectionVault'
 import Analytics from './pages/Analytics'
+import Profile from './pages/Profile'
 import SplashScreen from './components/SplashScreen'
 import { useState } from 'react'
 
@@ -85,6 +86,16 @@ export default function App() {
             <ProtectedRoute>
               <AppLayout>
                 <Analytics />
+              </AppLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/profile"
+          element={
+            <ProtectedRoute>
+              <AppLayout>
+                <Profile />
               </AppLayout>
             </ProtectedRoute>
           }
