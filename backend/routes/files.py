@@ -1,6 +1,8 @@
 import os
 import uuid
 import logging
+import tempfile
+import zipfile
 from pathlib import Path
 from flask import Blueprint, request, jsonify, send_file, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
@@ -25,6 +27,28 @@ MIME_MAP = {
     "document": ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"],
     "archive": ["application/zip", "application/x-zip-compressed"],
 }
+
+
+def restored_download_name(record: FileRecord) -> str:
+    return f"restored_{record.original_filename}"
+
+
+def compressed_download_name(record: FileRecord) -> str:
+    compressed_ext = Path(record.compressed_filename or record.original_filename).suffix
+    original_stem = Path(record.original_filename).stem
+    return f"compressed_{original_stem}{compressed_ext}"
+
+
+def original_path(record: FileRecord) -> str:
+    return os.path.join(current_app.config["UPLOAD_FOLDER"], record.stored_filename)
+
+
+def compressed_path(record: FileRecord) -> str:
+    return os.path.join(current_app.config["COMPRESSED_FOLDER"], record.compressed_filename)
+
+
+def safe_zip_member(name: str) -> str:
+    return secure_filename(name) or f"file_{uuid.uuid4()}"
 
 
 def detect_file_type(filename: str) -> str | None:
@@ -181,6 +205,107 @@ def download_file(file_id):
         return jsonify({"error": "File not found on disk"}), 404
 
     return send_file(path, as_attachment=True, download_name=download_name)
+
+
+@files_bp.route("/<file_id>/download/compressed", methods=["GET"])
+@jwt_required()
+def download_compressed_file(file_id):
+    user_id = get_jwt_identity()
+    record = FileRecord.query.filter_by(id=file_id, user_id=user_id).first()
+    if not record:
+        return jsonify({"error": "File not found"}), 404
+    if not record.is_compressed or not record.compressed_filename:
+        return jsonify({"error": "No compressed version available"}), 404
+
+    path = compressed_path(record)
+    if not os.path.exists(path):
+        return jsonify({"error": "Compressed file not found on disk"}), 404
+
+    return send_file(path, as_attachment=True, download_name=compressed_download_name(record))
+
+
+@files_bp.route("/<file_id>/download/restored", methods=["GET"])
+@jwt_required()
+def download_restored_file(file_id):
+    user_id = get_jwt_identity()
+    record = FileRecord.query.filter_by(id=file_id, user_id=user_id).first()
+    if not record:
+        return jsonify({"error": "File not found"}), 404
+    if record.is_protected:
+        return jsonify({"error": "File is protected; use restore endpoint"}), 400
+
+    path = original_path(record)
+    if not os.path.exists(path):
+        return jsonify({"error": "Original file not found on disk"}), 404
+
+    return send_file(
+        path,
+        as_attachment=True,
+        download_name=restored_download_name(record),
+        mimetype=record.mime_type or "application/octet-stream",
+    )
+
+
+@files_bp.route("/download/compressed/bulk", methods=["POST"])
+@jwt_required()
+def download_compressed_bulk():
+    user_id = get_jwt_identity()
+    data = request.get_json() or {}
+    file_ids = data.get("file_ids") or []
+    query = FileRecord.query.filter_by(user_id=user_id, is_duplicate=False)
+    if file_ids:
+        query = query.filter(FileRecord.id.in_(file_ids))
+
+    records = [r for r in query.all() if r.is_compressed and r.compressed_filename]
+    if not records:
+        return jsonify({"error": "No compressed files available"}), 404
+
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+    tmp.close()
+    with zipfile.ZipFile(tmp.name, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        used_names = set()
+        for record in records:
+            path = compressed_path(record)
+            if not os.path.exists(path):
+                continue
+            name = safe_zip_member(compressed_download_name(record))
+            if name in used_names:
+                name = f"{Path(name).stem}_{record.id}{Path(name).suffix}"
+            used_names.add(name)
+            zf.write(path, name)
+
+    return send_file(tmp.name, as_attachment=True, download_name="compressed_files.zip")
+
+
+@files_bp.route("/download/restored/bulk", methods=["POST"])
+@jwt_required()
+def download_restored_bulk():
+    user_id = get_jwt_identity()
+    data = request.get_json() or {}
+    file_ids = data.get("file_ids") or []
+    query = FileRecord.query.filter_by(user_id=user_id, is_duplicate=False, is_protected=False)
+    if file_ids:
+        query = query.filter(FileRecord.id.in_(file_ids))
+
+    records = query.all()
+    if not records:
+        return jsonify({"error": "No restored files available"}), 404
+
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+    tmp.close()
+    with zipfile.ZipFile(tmp.name, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        used_names = set()
+        for record in records:
+            path = original_path(record)
+            if not os.path.exists(path):
+                continue
+            name = safe_zip_member(restored_download_name(record))
+            if name in used_names:
+                name = f"{Path(name).stem}_{record.id}{Path(name).suffix}"
+            used_names.add(name)
+            zf.write(path, name)
+
+    return send_file(tmp.name, as_attachment=True, download_name="restored_files.zip")
 
 
 @files_bp.route("/<file_id>/restore", methods=["GET"])

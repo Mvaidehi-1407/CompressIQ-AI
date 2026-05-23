@@ -69,7 +69,7 @@ export default function App() {
           }
         />
         <Route
-          path="/protect"
+          path="/restore"
           element={
             <ProtectedRoute>
               <AppLayout>
@@ -78,6 +78,7 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+        <Route path="/protect" element={<Navigate to="/restore" replace />} />
         <Route
           path="/analytics"
           element={
