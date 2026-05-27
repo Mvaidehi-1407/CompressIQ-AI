@@ -1,6 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useAuthStore } from '../store/authStore'
+import Logo from './Logo'
 import {
   LayoutDashboard, Upload, Zap, ShieldCheck,
   BarChart3, LogOut, ChevronRight
@@ -28,14 +29,8 @@ export default function Sidebar() {
       {/* Logo */}
       <div className="p-6 border-b border-white/5">
         <div className="flex items-center gap-3">
-          <div
-            className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-            style={{ background: 'linear-gradient(135deg, #2563eb, #7c3aed)', boxShadow: '0 0 20px rgba(37,99,235,0.4)' }}
-          >
-            <svg width="18" height="18" viewBox="0 0 40 40" fill="none">
-              <path d="M20 4L36 13V27L20 36L4 27V13L20 4Z" stroke="white" strokeWidth="2.5" strokeLinejoin="round" />
-              <circle cx="20" cy="20" r="5" fill="white" />
-            </svg>
+          <div className="w-9 h-9 rounded-xl overflow-hidden flex-shrink-0 shadow-[0_0_20px_rgba(37,99,235,0.4)]">
+            <Logo />
           </div>
           <div>
             <span className="font-bold text-sm gradient-text">CompressIQ</span>

@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion'
+import Logo from './Logo'
 
 export default function SplashScreen() {
   return (
@@ -24,18 +25,8 @@ export default function SplashScreen() {
           animate={{ rotate: 360 }}
           transition={{ duration: 8, repeat: Infinity, ease: 'linear' }}
         >
-          <div
-            className="w-20 h-20 rounded-2xl flex items-center justify-center"
-            style={{
-              background: 'linear-gradient(135deg, #2563eb, #7c3aed)',
-              boxShadow: '0 0 60px rgba(37,99,235,0.6)',
-            }}
-          >
-            <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
-              <path d="M20 4L36 13V27L20 36L4 27V13L20 4Z" stroke="white" strokeWidth="2" strokeLinejoin="round" />
-              <path d="M20 4V36M4 13L36 27M36 13L4 27" stroke="white" strokeWidth="1.5" strokeOpacity="0.5" />
-              <circle cx="20" cy="20" r="5" fill="white" />
-            </svg>
+          <div className="w-20 h-20 rounded-2xl overflow-hidden shadow-[0_0_60px_rgba(37,99,235,0.6)]">
+            <Logo />
           </div>
         </motion.div>
 
