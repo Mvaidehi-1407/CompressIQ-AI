@@ -28,7 +28,16 @@ def _safe_zip_member(name: str) -> str:
 
 
 def _decrypt_protected_payload(record: FileRecord) -> tuple[bool, str | None]:
-    pkey = ProtectionKey.query.filter_by(id=record.protection_key_id, file_id=record.id).first()
+    pkey = None
+    if record.protection_key_id:
+        pkey = ProtectionKey.query.filter_by(id=record.protection_key_id, file_id=record.id).first()
+
+    # Fallback to any key for this file if the exact stored key id is missing.
+    # This preserves restore behavior for older records or cases where key metadata
+    # has drifted but the file still has an available protection key.
+    if not pkey:
+        pkey = ProtectionKey.query.filter_by(file_id=record.id).order_by(ProtectionKey.created_at.desc()).first()
+
     if not pkey:
         return False, None
 

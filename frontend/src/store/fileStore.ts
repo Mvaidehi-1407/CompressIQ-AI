@@ -38,7 +38,7 @@ interface FileState {
   downloadCompressed: (id: string, filename: string) => Promise<void>
   downloadRestored: (id: string, filename: string, protectedFile?: boolean) => Promise<void>
   downloadCompressedBulk: (ids?: string[]) => Promise<void>
-  downloadRestoredBulk: (ids?: string[], protectedFiles?: boolean) => Promise<void>
+  downloadRestoredBulk: (ids?: string[]) => Promise<void>
   restoreProtected: (id: string, filename: string) => Promise<void>
 }
 
@@ -147,9 +147,8 @@ export const useFileStore = create<FileState>((set, get) => ({
     saveBlob(res.data, filenameFromDisposition(res.headers['content-disposition']) ?? 'compressed_files.zip')
   },
 
-  downloadRestoredBulk: async (ids = [], protectedFiles = false) => {
-    const endpoint = protectedFiles ? '/api/protect/restore/bulk' : '/api/files/download/restored/bulk'
-    const res = await api.post(endpoint, { file_ids: ids }, { responseType: 'blob' })
+  downloadRestoredBulk: async (ids = []) => {
+    const res = await api.post('/api/files/download/restored/bulk', { file_ids: ids }, { responseType: 'blob' })
     saveBlob(res.data, filenameFromDisposition(res.headers['content-disposition']) ?? 'restored_files.zip')
   },
 

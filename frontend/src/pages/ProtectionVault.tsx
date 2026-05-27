@@ -25,10 +25,11 @@ export default function ProtectionVault() {
 
   useEffect(() => { fetchFiles() }, [])
 
-  const protectedFiles = files.filter(f => !f.is_duplicate && f.is_protected)
-  const eligible = protectedFiles
-  const compressedFiles = files.filter(f => !f.is_duplicate && f.is_compressed)
+  const restorableFiles = files.filter(f => !f.is_duplicate && (f.is_protected || f.is_compressed))
+  const compressedFiles = restorableFiles.filter(f => f.is_compressed)
   const selectedIds = Array.from(selected)
+  const selectedCompressedIds = selectedIds.length ? compressedFiles.filter((f) => selected.has(f.id)).map((f) => f.id) : compressedFiles.map((f) => f.id)
+  const restorableCount = restorableFiles.length
 
   const unprotect = async (id: string) => {
     setActing(prev => new Set([...prev, id]))
@@ -64,10 +65,10 @@ export default function ProtectionVault() {
     setActing(prev => { const s=new Set(prev); s.delete(id); return s })
   }
 
-  const restoredBulk = async (ids: string[], protectedOnly = true) => {
-    const batchId = protectedOnly ? 'protected-bulk' : 'restored-bulk'
+  const restoredBulk = async (ids: string[]) => {
+    const batchId = 'restored-bulk'
     setActing(prev => new Set([...prev, batchId]))
-    try { await downloadRestoredBulk(ids, protectedOnly) } catch {}
+    try { await downloadRestoredBulk(ids) } catch {}
     setActing(prev => { const s=new Set(prev); s.delete(batchId); return s })
   }
 
@@ -100,7 +101,7 @@ export default function ProtectionVault() {
           </div>
           <div className="ml-auto flex gap-6 text-center flex-shrink-0">
             <div>
-              <div className="text-2xl font-black text-emerald-400">{protectedCount}</div>
+              <div className="text-2xl font-black text-emerald-400">{restorableCount}</div>
               <div className="text-xs text-slate-500 uppercase tracking-wider">Restorable</div>
             </div>
           </div>
@@ -113,19 +114,19 @@ export default function ProtectionVault() {
           <p className="text-xs text-slate-500">Select the restorable files you want and download reconstructed originals.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button onClick={() => setSelected(new Set(protectedFiles.map(f => f.id)))} disabled={protectedFiles.length === 0} className="btn-secondary text-xs py-2 px-3">
+          <button onClick={() => setSelected(new Set(restorableFiles.map(f => f.id)))} disabled={restorableFiles.length === 0} className="btn-secondary text-xs py-2 px-3">
             Select All Restorable
           </button>
           <button onClick={() => setSelected(new Set())} disabled={selectedIds.length === 0} className="btn-secondary text-xs py-2 px-3">
             Clear Selection
           </button>
-          <button onClick={() => restoredBulk(selectedIds, true)} disabled={selectedIds.length === 0 || acting.has('protected-bulk')} className="btn-cyan text-xs py-2 px-3">
+          <button onClick={() => restoredBulk(selectedIds)} disabled={selectedIds.length === 0 || acting.has('restored-bulk')} className="btn-cyan text-xs py-2 px-3">
             <Download size={13}/> Download Selected Restored Files
           </button>
-          <button onClick={() => restoredBulk([], true)} disabled={protectedFiles.length === 0 || acting.has('protected-bulk')} className="btn-secondary text-xs py-2 px-3">
+          <button onClick={() => restoredBulk([])} disabled={restorableFiles.length === 0 || acting.has('restored-bulk')} className="btn-secondary text-xs py-2 px-3">
             <Download size={13}/> Download All Restored Files
           </button>
-          <button onClick={() => compressedBulk(selectedIds.length ? selectedIds : compressedFiles.map(f => f.id))} disabled={compressedFiles.length === 0 || acting.has('compressed-bulk')} className="btn-secondary text-xs py-2 px-3">
+          <button onClick={() => compressedBulk(selectedCompressedIds)} disabled={(selectedIds.length ? selectedCompressedIds.length === 0 : compressedFiles.length === 0) || acting.has('compressed-bulk')} className="btn-secondary text-xs py-2 px-3">
             <Archive size={13}/> Download Compressed Versions
           </button>
         </div>
@@ -133,13 +134,13 @@ export default function ProtectionVault() {
 
       <div className="space-y-3">
         <AnimatePresence>
-          {eligible.length === 0 && (
+          {restorableFiles.length === 0 && (
             <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} className="card flex flex-col items-center py-16 text-center">
               <ShieldCheck size={40} className="text-slate-700 mb-3"/>
               <p className="text-slate-500 font-medium">No restorable files to display</p>
             </motion.div>
           )}
-          {eligible.map((f, i) => {
+          {restorableFiles.map((f, i) => {
             const Icon = typeIcon[f.file_type] ?? FileText
             const isActing = acting.has(f.id)
             return (
@@ -149,11 +150,9 @@ export default function ProtectionVault() {
               >
                 <div className="flex items-center gap-4">
                   <div className="relative">
-                    {f.is_protected && (
-                      <button onClick={() => toggle(f.id)} className={`absolute -left-2 -top-2 w-5 h-5 rounded-md border flex items-center justify-center z-10 ${selected.has(f.id) ? 'bg-emerald-500 border-emerald-400' : 'bg-slate-900 border-slate-600'}`} title="Select for restored download">
-                        {selected.has(f.id) && <CheckCircle size={12} className="text-white"/>}
-                      </button>
-                    )}
+                    <button onClick={() => toggle(f.id)} className={`absolute -left-2 -top-2 w-5 h-5 rounded-md border flex items-center justify-center z-10 ${selected.has(f.id) ? 'bg-emerald-500 border-emerald-400' : 'bg-slate-900 border-slate-600'}`} title="Select for restored download">
+                      {selected.has(f.id) && <CheckCircle size={12} className="text-white"/>}
+                    </button>
                     <div className="w-10 h-10 rounded-xl glass flex items-center justify-center flex-shrink-0">
                       <Icon size={17} className={typeColor[f.file_type]??'text-blue-400'}/>
                     </div>

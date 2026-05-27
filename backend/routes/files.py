@@ -6,8 +6,9 @@ import zipfile
 from pathlib import Path
 from flask import Blueprint, request, jsonify, send_file, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
+from sqlalchemy import or_
 from werkzeug.utils import secure_filename
-from models import db, FileRecord
+from models import db, FileRecord, ProtectionKey
 from services.duplicate_service import compute_sha256, check_duplicate
 from services.protection_service import unprotect_file
 
@@ -277,15 +278,39 @@ def download_compressed_bulk():
     return send_file(tmp.name, as_attachment=True, download_name="compressed_files.zip")
 
 
+def _decrypt_protected_payload(record: FileRecord) -> tuple[bool, str | None]:
+    pkey = None
+    if record.protection_key_id:
+        pkey = ProtectionKey.query.filter_by(id=record.protection_key_id, file_id=record.id).first()
+
+    if not pkey:
+        pkey = ProtectionKey.query.filter_by(file_id=record.id).order_by(ProtectionKey.created_at.desc()).first()
+
+    if not pkey:
+        return False, None
+
+    protected_path = os.path.join(current_app.config["PROTECTED_FOLDER"], record.protected_filename)
+    if not os.path.exists(protected_path):
+        return False, None
+
+    ext = Path(record.compressed_filename or record.original_filename).suffix.lower()
+    tmp_path = os.path.join(tempfile.gettempdir(), f"restore_{uuid.uuid4()}{ext}")
+    if not unprotect_file(protected_path, tmp_path, pkey.key_data, pkey.nonce):
+        return False, None
+    return True, tmp_path
+
+
 @files_bp.route("/download/restored/bulk", methods=["POST"])
 @jwt_required()
 def download_restored_bulk():
     user_id = get_jwt_identity()
     data = request.get_json() or {}
     file_ids = data.get("file_ids") or []
-    query = FileRecord.query.filter_by(user_id=user_id, is_duplicate=False, is_protected=False)
+    query = FileRecord.query.filter_by(user_id=user_id, is_duplicate=False)
     if file_ids:
         query = query.filter(FileRecord.id.in_(file_ids))
+    else:
+        query = query.filter(or_(FileRecord.is_protected == True, FileRecord.is_compressed == True))
 
     records = query.all()
     if not records:
@@ -296,14 +321,30 @@ def download_restored_bulk():
     with zipfile.ZipFile(tmp.name, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         used_names = set()
         for record in records:
-            path = original_path(record)
-            if not os.path.exists(path):
+            if record.is_protected:
+                decrypted, decrypted_path = _decrypt_protected_payload(record)
+                if not decrypted or not decrypted_path or not os.path.exists(decrypted_path):
+                    continue
+                source_path = original_path(record)
+                if not os.path.exists(source_path):
+                    source_path = decrypted_path
+            else:
+                source_path = original_path(record)
+
+            if not source_path or not os.path.exists(source_path):
                 continue
+
             name = safe_zip_member(restored_download_name(record))
             if name in used_names:
                 name = f"{Path(name).stem}_{record.id}{Path(name).suffix}"
             used_names.add(name)
-            zf.write(path, name)
+            zf.write(source_path, name)
+
+            if record.is_protected and decrypted_path and decrypted_path != source_path:
+                try:
+                    os.remove(decrypted_path)
+                except OSError:
+                    pass
 
     return send_file(tmp.name, as_attachment=True, download_name="restored_files.zip")
 
